@@ -20,4 +20,4 @@ It’s a portmanteau of **Luanti** + **Launcher**. Simple, clean, and unique.
 * **Theme Engine:** One-click menu background injection. Switch between *Cyberpunk*, *Retro Terminal*, and more without digging through file directories.
 
 ---
-*Made with passion in Ukraine* 🇺🇦
+*Made with passion in Ukraine*
