@@ -1,18 +1,37 @@
+import os
+import sys
+
+# =====================================================
+# SECURITY HANDSHAKE
+# =====================================================
+# This check must happen before any other imports to 
+# prevent the GUI engine from initializing.
+if os.environ.get("LUANCHER_BOOTED") != "TRUE":
+    print("\n" + "─"*60)
+    print(" LUANCHER: INITIALIZATION PREVENTED")
+    print(" " + "─"*58)
+    print(" Status: Direct launch of 'main.py' is restricted.")
+    print(" Reason: Environment handshake missing.")
+    print("\n How to fix:")
+    print(" 1. Close this terminal.")
+    print(" 2. Run 'python3 updater.py' to launch the application.")
+    print(" 3. The updater will manage dependencies and launch safely.")
+    print("─"*60 + "\n")
+    sys.exit(0) # Using 0 for a "planned" exit rather than an error
+
 import flet as ft
 import threading
 import subprocess
 import requests
 import feedparser
 import shutil
-import os
-import sys
 import random
 from pathlib import Path
 from html.parser import HTMLParser
 from io import StringIO
 
 # =====================================================
-# PATHS - UPDATED FOR BUNDLING
+# PATHS
 # =====================================================
 
 # Detect if we are running as a compiled binary
@@ -20,9 +39,7 @@ IS_BUNDLE = getattr(sys, 'frozen', False)
 
 if IS_BUNDLE:
     # Use a hidden folder in the User's Home for data/builds
-    # This prevents data loss when the app updates or moves
     ROOT = Path.home() / ".luancher"
-    # Assets (like default themes) are bundled inside the app directory
     ASSETS_DIR = Path(__file__).parent / "assets"
 else:
     # Use the local folder when running 'python luancher.py'
@@ -129,7 +146,6 @@ def run(cmd, cwd=None, cancel_event=None):
         raise subprocess.CalledProcessError(proc.returncode, cmd)
 
 def ensure_dirs():
-    # Create all required app directories in the ROOT (Home folder)
     for p in [RUNTIME, SRC.parent, BUILDS, DATA, CACHE, LOGS, THEMES_DIR]:
         p.mkdir(parents=True, exist_ok=True)
     
@@ -254,10 +270,8 @@ def fetch_news():
 # =====================================================
 
 def find_binary():
-    # Check symlinked current build
     b1 = BUILDS / "current" / "bin" / "luanti"
     if b1.exists(): return b1
-    # Check source bin as fallback
     b2 = SRC / "bin" / "luanti"
     if b2.exists(): return b2
     return None
@@ -265,7 +279,6 @@ def find_binary():
 def launch():
     binary = find_binary()
     if not binary: raise FileNotFoundError("No compiled Luanti binary found.")
-    # Ensure binary is executable
     os.chmod(binary, 0o755)
     subprocess.Popen([str(binary)])
 
