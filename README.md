@@ -23,6 +23,6 @@ Luancher currently doesn't have any official binaries. To run Luancher, download
 `python3 -m venv .luancher`
 `source luancher/bin/activate`
 `pip install flet requests feedparser`
-`python3 main.py`
+`python3 updater.py`
 ---
 *Made with passion in Ukraine*
