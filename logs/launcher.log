@@ -1,0 +1,8 @@
+git clone https://github.com/luanti-org/luanti.git /home/v2-0/luancher/runtime/src/luanti
+git clone https://github.com/luanti-org/luanti.git /home/v2-0/luancher/runtime/src/luanti
+git clone https://github.com/luanti-org/luanti.git /home/v2-0/luancher/runtime/src/luanti
+git clone https://github.com/luanti-org/luanti.git /home/v2-0/luancher/runtime/src/luanti
+git fetch --tags
+git checkout 5.15.0
+cmake /home/v2-0/luancher/runtime/src/luanti -DRUN_IN_PLACE=FALSE -DENABLE_GETTEXT=TRUE
+make -j 12
