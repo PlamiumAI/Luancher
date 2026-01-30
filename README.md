@@ -18,11 +18,71 @@ It’s a portmanteau of **Luanti** + **Launcher**. Simple, clean, and unique.
 * **Auto-Updates:** Never manually download a `.tar.gz` again. Whether it's 5.16.0 or beyond, Luancher handles it.
 * **Integrated News:** Stay updated with the official Luanti blogpost RSS feed right in your sidebar.
 * **Theme Engine:** One-click menu background injection. Switch between *Cyberpunk*, *Retro Terminal*, and more without digging through file directories.
-## Notice
-Luancher currently doesn't have any official binaries. To run Luancher, download the source code, and then do:
-`python3 -m venv .luancher`
-`source luancher/bin/activate`
-`pip install flet requests feedparser`
-`python3 updater.py`
----
+
+## ⬇️ Installation guide (Linux only, for now, unfortunately)
+
+To run Luancher and build the Luanti engine, you must install the core system dependencies, clone the repository, set up a virtual environment, and initialize the project.
+
+### 1. System Dependencies
+Run the command corresponding to your Linux distribution to install the necessary compilers and development libraries.
+
+**Debian / Ubuntu / Mint:**
+``
+sudo apt update && sudo apt install -y g++ make libc6-dev cmake libpng-dev libjpeg-dev libgl1-mesa-dev libsqlite3-dev libogg-dev libvorbis-dev libopenal-dev libcurl4-gnutls-dev libfreetype6-dev zlib1g-dev libgmp-dev libjsoncpp-dev libzstd-dev libluajit-5.1-dev gettext libsdl2-dev python3-venv git
+``
+
+**Arch Linux:**
+``
+sudo pacman -S --needed base-devel cmake libpng libjpeg-turbo mesa sqlite libogg libvorbis openal curl freetype2 zlib gmp jsoncpp zstd luajit gettext sdl2 git
+``
+
+**Fedora:**
+``
+sudo dnf install make gcc-c++ cmake libpng-devel libjpeg-turbo-devel mesa-libGL-devel sqlite-devel libogg-devel libvorbis-devel openal-soft-devel libcurl-devel freetype-devel zlib-devel gmp-devel jsoncpp-devel zstd-devel luajit-devel gettext-devel SDL2-devel git
+``
+
+**openSUSE (Tumbleweed/Leap):**
+``
+sudo zypper install gcc-c++ cmake libpng16-devel libjpeg8-devel mesa-libGL-devel sqlite3-devel libogg-devel libvorbis-devel libopenal1-devel libcurl-devel freetype2-devel zlib-devel libgmp-devel libjsoncpp-devel libzstd-devel luajit-devel gettext-runtime SDL2-devel git
+``
+
+**Void Linux:**
+``
+sudo xbps-install -S base-devel cmake libpng-devel libjpeg-turbo-devel MesaLib-devel sqlite-devel libogg-devel libvorbis-devel openal-soft-devel libcurl-devel freetype-devel zlib-devel gmp-devel jsoncpp-devel libzstd-devel LuaJIT-devel gettext SDL2-devel python3-venv git
+``
+
+**Alpine Linux:**
+``
+apk add build-base cmake libpng-dev libjpeg-turbo-dev mesa-dev sqlite-dev libogg-dev libvorbis-dev openal-soft-dev curl-dev freetype-dev zlib-dev gmp-dev jsoncpp-dev zstd-dev luajit-dev gettext-dev sdl2-dev python3 py3-pip git
+``
+
+### 2. Clone and Environment Setup
+Clone the repository and initialize a virtual environment (`venv`) to keep your system clean.
+
+# Clone the repository
+``
+git clone https://github.com/PlamiumAI/Luancher.git && cd Luancher
+``
+# Create and activate the virtual environment
+``
+python3 -m venv venv
+``
+``
+source venv/bin/activate
+``
+
+### 3. Python Dependencies
+With the virtual environment active, install the required libraries for the UI, networking, and theme engine.
+
+``
+pip install flet Pillow requests feedparser
+``
+
+### 4. Initialization
+Run the updater to sync the engine source code and prepare the environment for the first launch.
+
+``
+python3 updater.py
+``
+
 *Made with passion in Ukraine*
