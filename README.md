@@ -7,7 +7,6 @@ The modern, high-performance launcher for **Luanti**.
 <img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/b4bd3c92-66e0-437e-bbdd-4cfffa3109c3" />
 
 ## 📖 About Luancher
-Published on **January 28, 2026**.  
 Luancher’s purpose is to provide a modern interface for Luanti, handling updates and maintenance so you can focus on the gameplay.
 
 ## ⚠️ Stability & Support
