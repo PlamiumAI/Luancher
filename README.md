@@ -6,6 +6,8 @@ The modern, high-performance launcher for **Luanti**.
 <img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/6733918b-b8d5-4e1b-8900-c11365dde436" />
 <img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/b4bd3c92-66e0-437e-bbdd-4cfffa3109c3" />
 
+# ⚠️ Notice: Luancher is temporarily deprecated. We'll go back to updating soon, but it currently has bugs. Use at your own risk.
+
 ## 📖 About Luancher
 Luancher’s purpose is to provide a modern interface for Luanti, handling updates and maintenance so you can focus on the gameplay.
 
