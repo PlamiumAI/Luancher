@@ -1,12 +1,28 @@
 # 🚀 Luancher
 The modern, high-performance launcher for **Luanti**.
-## 🖼️ Screenshots
+## 🖼️ Screenshots (New)
+<img width="564" height="264" alt="image" src="https://github.com/user-attachments/assets/3483c577-71bf-418e-8815-ce6de691eeba" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/6535a8da-75a8-4f37-85e3-4faebcc9d075" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/24f30f81-dac2-4a28-9b30-a9b593bfe544" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/9c6347b0-deb3-493f-92a2-50787c7aa50a" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/00073960-81ff-4116-aca9-70a158419c78" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/4a1bf4a0-b2bb-4809-af8b-079f19133ce3" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/26ad9013-455e-4e6a-b301-3517b8417e60" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/9474d4b1-0224-4d54-a2d0-2b81c80a0e5e" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/fd988515-94eb-4224-9229-905d374ddf3e" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/83dfc048-7f5f-4209-8f2c-df8b09a5616e" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/f159ce68-cd45-4b17-9b73-f4b3e5218212" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/108cbb83-7577-4e7f-a8e0-bcf96e4269d1" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/780f0bdf-aace-4e92-8eb6-685e64d1855e" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/395f44f5-1ec0-44ee-9043-02bb84cebd25" />
+<img width="1918" height="999" alt="image" src="https://github.com/user-attachments/assets/1a36b016-67a6-4ab4-9832-55242d0cc8e8" />
+
+
+## 🖼️ Screenshots (Old)
 <img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/5d53b1a0-1b84-4eec-a186-87dc511d1510" />
 <img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/79de8ebe-0353-43f5-a345-4aa2a28a0934" />
 <img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/6733918b-b8d5-4e1b-8900-c11365dde436" />
 <img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/b4bd3c92-66e0-437e-bbdd-4cfffa3109c3" />
-
-# Version 2.0 is here!
 
 ## 📖 About Luancher
 Luancher’s purpose is to provide a modern interface for Luanti, handling updates and maintenance so you can focus on the gameplay.
