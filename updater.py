@@ -176,11 +176,6 @@ def self_update():
 # ─────────────────────────────────────────────
 
 def sync_main():
-    """
-    Smart sync: fetch remote version hash first (lightweight).
-    Only download main.py if the hash differs from what we have stored.
-    Falls back to full hash comparison if no version.txt exists remotely.
-    """
     if SKIP_UPDATE:
         info("Update skipped (--noupdate).")
         return
@@ -188,7 +183,6 @@ def sync_main():
     lbl = start_spinner("Checking for app updates...")
 
     try:
-        # Step 1: Try to get a lightweight remote version tag first
         remote_version = None
         try:
             vresp = requests.get(VERSION_URL, timeout=6)
@@ -202,11 +196,9 @@ def sync_main():
         debug(f"Local version tag: {local_version}")
 
         if remote_version and local_version == remote_version:
-            # Versions match — no need to download anything
             stop_spinner("App is already up to date.")
             return
 
-        # Step 2: If version tags unavailable or differ, download and hash-check
         update_spinner(lbl, "Fetching latest app release...")
         resp = requests.get(RAW_URL, timeout=15)
         if resp.status_code != 200:
@@ -216,24 +208,20 @@ def sync_main():
         remote_content = resp.content
         remote_hash = hashlib.sha256(remote_content).hexdigest()
 
-        # Check against locally stored hash if we don't have a version tag
         if not remote_version:
-            local_hash_stored = local_version  # fallback: version file stores hash
+            local_hash_stored = local_version
             if local_hash_stored == remote_hash:
                 stop_spinner("App is already up to date.")
                 write_local_version(remote_hash)
                 return
 
-        # Step 3: Write new main.py
         update_spinner(lbl, "Applying update...")
         tmp = "main.py.tmp"
         with open(tmp, "wb") as f:
             f.write(remote_content)
         os.replace(tmp, "main.py")
 
-        # Store version identifier
         write_local_version(remote_version if remote_version else remote_hash)
-
         stop_spinner("App updated successfully.")
 
     except requests.exceptions.ConnectionError:
@@ -247,6 +235,14 @@ def sync_main():
 # ─────────────────────────────────────────────
 
 def check_sys_dependency(cmd):
+    # Specialized check for Linux libraries
+    if platform.system() == "Linux" and (cmd.endswith("-dev") or cmd.endswith("-devel")):
+        try:
+            # dpkg -s returns 0 if package is installed
+            return subprocess.call(["dpkg", "-s", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
+        except FileNotFoundError:
+            pass
+            
     return shutil.which(cmd) is not None
 
 def get_package_manager():
@@ -279,21 +275,20 @@ def install_system_deps():
         error("No package manager found. Install build tools manually.")
         return False
 
-    lbl = start_spinner(f"Installing missing tools: {', '.join(missing)}")
+    # Stop spinner before running sudo so the prompt doesn't get overwritten
+    print(f"{CYAN}[Luancher]{CLR} {YELLOW}!{CLR} Missing tools: {', '.join(missing)}")
+    
     pkg_map = {"g++": "build-essential"} if name == "apt" else {}
     install_list = [pkg_map.get(m, m) for m in missing]
 
     try:
         full_cmd = cmd.split() + install_list
-        subprocess.check_call(
-            full_cmd,
-            stdout=sys.stdout if IS_DEBUG else subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        stop_spinner(f"Installed: {', '.join(missing)}")
+        # We allow stdout/stderr so user can see 'Password:' prompt
+        subprocess.check_call(full_cmd)
+        success(f"Installed: {', '.join(missing)}")
         return True
     except subprocess.CalledProcessError:
-        stop_spinner(f"Failed to install: {', '.join(missing)}", ok=False)
+        error(f"Failed to install: {', '.join(missing)}")
         return False
 
 # ─────────────────────────────────────────────
@@ -343,10 +338,8 @@ def launch_app():
 def main():
     print_header()
 
-    # Phase 0: Self-update the bootloader
     self_update()
 
-    # Phase 1: System tools
     info("Running pre-flight checks...")
     print()
     ok = install_system_deps()
@@ -358,17 +351,14 @@ def main():
             pass
     print()
 
-    # Phase 2: Python libs
     sync_python_libs()
     print()
 
-    # Phase 3: Smart main.py sync
     sync_main()
     print()
 
     divider()
 
-    # Phase 4: Launch
     launch_app()
 
 if __name__ == "__main__":
