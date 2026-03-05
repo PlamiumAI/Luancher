@@ -3,7 +3,6 @@ The modern, high-performance launcher for **Luanti**.|
 
 ## 🖼️ Screenshots (New)
 <img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/b41b06e3-10b7-4e42-8346-50498df38858" />
-<img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/a19bc476-c216-4401-8569-a3d80480c6db" />
 <img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/58fb8e7b-c784-48be-8f27-4598d471767d" />
 <img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/e07a4625-9f1e-463f-a68e-298de2b1a533" />
 <img width="1920" height="1001" alt="image" src="https://github.com/user-attachments/assets/f06c4db9-96d4-42ce-8419-4ba00e5a9957" />
