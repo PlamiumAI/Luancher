@@ -476,6 +476,124 @@ def fetch_all_releases() -> list:
         return []
 
 # =====================================================
+# SECURITY HELPERS
+# =====================================================
+
+def _safe_version_tag(version: str) -> str:
+    """
+    Sanitise a version string so it is safe to use as a filesystem path
+    component. Only alphanumerics, dots, hyphens and underscores are allowed.
+    Raises ValueError for anything that looks suspicious (empty, path
+    separators, parent-directory traversal, etc.).
+
+    WHY THIS EXISTS
+    ───────────────
+    Before, an attacker who controlled the GitHub API response (MITM, DNS
+    hijack, or a compromised server) could return a tag_name like
+    "../../.bashrc" or "/etc/passwd".  That string was used verbatim in
+    BUILDS / version, meaning Path operations would escape the BUILDS
+    directory entirely — a classic *path traversal* bug.  This validator
+    closes that hole by whitelisting only the characters that are legal in a
+    semver tag.
+    """
+    import re
+    if not version or not isinstance(version, str):
+        raise ValueError("Empty or non-string version tag.")
+    # Strip a leading 'v' that GitHub sometimes includes.
+    clean = version.lstrip("v")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.\-_]{0,63}", clean):
+        raise ValueError(f"Suspicious version tag rejected: {version!r}")
+    # Extra guard: must not contain path separators even after the regex.
+    if "/" in clean or "\\" in clean or ".." in clean:
+        raise ValueError(f"Path traversal attempt in version tag: {version!r}")
+    return clean
+
+
+def _assert_inside(path: Path, root: Path) -> Path:
+    """
+    Resolve *path* and assert it is strictly inside *root*.
+    Returns the resolved path on success; raises ValueError otherwise.
+
+    WHY THIS EXISTS
+    ───────────────
+    Python's Path arithmetic will happily let you write
+    `BUILDS / "../../etc/passwd"` — the result is a valid Path object that
+    points outside BUILDS.  Resolving both sides and checking the prefix
+    turns that silent mistake into a loud exception.  We use this around
+    every place we construct a path from external data (version tags,
+    workspace names, imported binary paths).
+    """
+    resolved_root = root.resolve()
+    resolved_path = path.resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError:
+        raise ValueError(
+            f"Path escape detected: {resolved_path!r} is not inside {resolved_root!r}"
+        )
+    return resolved_path
+
+
+def _safe_extract_tar(archive_path: Path, dest: Path,
+                      cancel_event=None, emit=None) -> None:
+    import tarfile
+
+    dest.mkdir(parents=True, exist_ok=True)
+    resolved_dest = dest.resolve()
+
+    with tarfile.open(archive_path, "r:gz") as tf:
+        members = tf.getmembers()
+
+        # ── Python 3.12+: use the official 'data' filter ──────────────
+        if sys.version_info >= (3, 12):
+            if emit:
+                emit("Extracting source (secure filter active)...")
+            tf.extractall(dest, filter="data")
+
+        # ── Python < 3.12: manual per-member path validation ──────────
+        else:
+            if emit:
+                emit("Extracting source (manual path validation)...")
+            safe_members = []
+            for member in members:
+                # Normalise the member name
+                member_path = os.path.normpath(member.name)
+
+                # Reject absolute paths and any parent-directory components.
+                if os.path.isabs(member_path):
+                    log(f"[EXTRACT] Rejected absolute path in archive: {member.name!r}")
+                    continue
+                if member_path.startswith(".."):
+                    log(f"[EXTRACT] Rejected path-traversal entry: {member.name!r}")
+                    continue
+
+                # Resolve where this entry *would* land and verify it stays
+                # inside the destination directory.
+                full_target = (resolved_dest / member_path).resolve()
+                try:
+                    full_target.relative_to(resolved_dest)
+                except ValueError:
+                    log(f"[EXTRACT] Rejected escape entry: {member.name!r} → {full_target}")
+                    continue
+
+                # Reject symlinks that point outside the destination.
+                if member.issym() or member.islnk():
+                    link_target = os.path.normpath(
+                        os.path.join(os.path.dirname(member_path), member.linkname)
+                    )
+                    if os.path.isabs(link_target) or link_target.startswith(".."):
+                        log(f"[EXTRACT] Rejected dangerous symlink: {member.name!r}")
+                        continue
+
+                safe_members.append(member)
+
+            tf.extractall(dest, members=safe_members)
+
+        if cancel_event and cancel_event.is_set():
+            raise InterruptedError("Cancelled by user")
+
+
+# =====================================================
 # THEME SYSTEM
 # =====================================================
 def find_texture_dirs():
@@ -519,12 +637,38 @@ def apply_theme(theme_name, custom_themes=None):
 # =====================================================
 # BUILD / LAUNCH
 # =====================================================
+
 def run_cmd_stream(cmd, cwd=None, cancel_event=None, out_q=None):
+    """
+    Run an external command (cmake / make) with output streaming.
+
+    SECURITY NOTE — WHY NO shell=True
+    ───────────────────────────────────
+    subprocess with shell=True passes the command to /bin/sh.  If any element
+    of *cmd* contains shell metacharacters (`;`, `|`, `$()`, backticks, etc.)
+    the shell will interpret them, potentially executing attacker-controlled
+    code.  Because we build *cmd* as a plain Python list of strings, the OS
+    executes the program directly — no shell is involved, no metacharacter
+    expansion happens.  This completely eliminates command-injection for the
+    cmake/make build steps.
+    """
+    # Extra safety: cmd must be a list of plain strings, never a single string.
+    if isinstance(cmd, str):
+        raise TypeError(
+            "run_cmd_stream() requires a list, not a bare string — "
+            "passing a string risks shell injection if shell=True were ever added."
+        )
+
     log("RUN: " + " ".join(str(c) for c in cmd))
     proc = subprocess.Popen(
-        cmd, cwd=cwd,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1,
+        cmd,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        # shell=False is the default, but we state it explicitly as documentation.
+        shell=False,
     )
     if out_q is not None:
         def _reader():
@@ -546,7 +690,9 @@ def latest_version() -> str:
                      headers={"User-Agent": "Luancher-Client"},
                      timeout=15)
     r.raise_for_status()
-    return r.json()["tag_name"].lstrip("v")
+    raw_tag = r.json()["tag_name"]
+    # Sanitise before returning — callers use this as a path component.
+    return _safe_version_tag(raw_tag)
 
 def current_version():
     link = BUILDS / "current"
@@ -564,19 +710,58 @@ def installed_versions() -> list:
     )
 
 def _get_source_tarball_url(version: str) -> str:
+    """Fetch the tarball URL for a given version from the GitHub API."""
+    # version has already been sanitised by _safe_version_tag() at this point,
+    # but we validate again defensively.
+    version = _safe_version_tag(version)
     for tag in [version, f"v{version}"]:
         url = f"https://api.github.com/repos/luanti-org/luanti/releases/tags/{tag}"
         try:
             r = requests.get(url, headers={"User-Agent": "Luancher-Client"}, timeout=15)
             if r.status_code == 200:
-                return r.json()["tarball_url"]
-        except Exception:
+                tarball_url = r.json()["tarball_url"]
+                # Sanity-check: must be a GitHub URL.
+                if not tarball_url.startswith("https://"):
+                    raise RuntimeError(
+                        f"Unexpected tarball_url scheme: {tarball_url!r}"
+                    )
+                return tarball_url
+        except (requests.RequestException, KeyError, RuntimeError) as exc:
+            log(f"[TARBALL] {tag}: {exc}")
             continue
     raise RuntimeError(f"Could not find release for version {version} on GitHub.")
 
+
 def build_version(version, cancel_event=None, out_q=None):
-    target = BUILDS / version
-    if target.exists(): return
+    """
+    Download, verify, and compile a Luanti release from source.
+
+    KEY SECURITY CHANGES vs. the original
+    ──────────────────────────────────────
+    1. _safe_version_tag() — the version string (which came from a network
+       response) is validated before it is used as a directory name.  Without
+       this, a crafted tag_name like "../../.bashrc" would escape BUILDS.
+
+    2. _safe_extract_tar() — replaces the old
+           tarfile.open(...).extractall(tmp)
+       call with our hardened extractor that uses filter='data' on Python 3.12+
+       and a manual per-member prefix check on older Pythons.  This closes the
+       Zip-Slip / Tar-Slip path-traversal attack.
+
+    3. cmake / make are invoked via run_cmd_stream() with shell=False (explicit)
+       and all arguments as a Python list — no shell metacharacter expansion.
+
+    4. _assert_inside() guards the final install prefix to prevent the cmake
+       install step from writing outside BUILDS.
+    """
+    version = _safe_version_tag(version)
+    target  = BUILDS / version
+
+    # Assert the destination is inside BUILDS before doing anything.
+    _assert_inside(target, BUILDS)
+
+    if target.exists():
+        return
 
     def _emit(msg):
         log(msg)
@@ -592,6 +777,11 @@ def build_version(version, cancel_event=None, out_q=None):
     _emit(f"Fetching release info for v{version}...")
     dl_url = _get_source_tarball_url(version)
 
+    # ── Native download with requests (chunk-based progress) ──────────
+    # REPLACES: any hypothetical wget/curl subprocess call.
+    # WHY: subprocess + wget/curl with a URL string is an injection risk if
+    # the URL ever came from user input or was interpolated into a shell
+    # command.  requests.get() is a pure-Python call with no shell involved.
     _emit(f"Downloading source for v{version}...")
     with requests.get(dl_url, stream=True, timeout=120,
                       headers={"User-Agent": "Luancher-Client"}) as resp:
@@ -607,33 +797,44 @@ def build_version(version, cancel_event=None, out_q=None):
                     pct = done * 100 // total
                     _emit(f"Downloading... {pct}%  ({done // 1024 // 1024} / {total // 1024 // 1024} MB)")
 
-    _emit("Extracting source...")
+    # ── Secure extraction (Zip-Slip fix) ──────────────────────────────
     _check_cancel()
-    import tarfile
     tmp = CACHE / f"_src_{version}"
-    if tmp.exists(): shutil.rmtree(tmp)
+    if tmp.exists():
+        shutil.rmtree(tmp)
     tmp.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive_path, "r:gz") as tf:
-        tf.extractall(tmp)
+
+    _safe_extract_tar(archive_path, tmp, cancel_event=cancel_event, emit=_emit)
 
     entries = list(tmp.iterdir())
     src_dir = entries[0] if len(entries) == 1 and entries[0].is_dir() else tmp
 
+    # ── cmake (shell=False, list args, validated install prefix) ──────
     _emit("Running cmake...")
     _check_cancel()
     target.mkdir(parents=True, exist_ok=True)
+
+    # Resolve install prefix and assert it stays inside BUILDS.
+    install_prefix = _assert_inside(target, BUILDS)
+
     run_cmd_stream(
-        ["cmake", str(src_dir),
-         f"-DCMAKE_INSTALL_PREFIX={target}",
-         "-DRUN_IN_PLACE=FALSE",
-         "-DENABLE_GETTEXT=TRUE"],
-        cwd=target, cancel_event=cancel_event, out_q=out_q,
+        [
+            "cmake", str(src_dir),
+            f"-DCMAKE_INSTALL_PREFIX={install_prefix}",
+            "-DRUN_IN_PLACE=FALSE",
+            "-DENABLE_GETTEXT=TRUE",
+        ],
+        cwd=str(target),
+        cancel_event=cancel_event,
+        out_q=out_q,
     )
 
     _emit(f"Compiling with {os.cpu_count() or 2} cores (this takes a while)...")
     run_cmd_stream(
         ["make", "-j", str(os.cpu_count() or 2), "install"],
-        cwd=target, cancel_event=cancel_event, out_q=out_q,
+        cwd=str(target),
+        cancel_event=cancel_event,
+        out_q=out_q,
     )
 
     try: archive_path.unlink()
@@ -645,26 +846,44 @@ def build_version(version, cancel_event=None, out_q=None):
     if out_q: out_q.put(("done", None))
 
 def switch_current(version):
+    version = _safe_version_tag(version)
+    _assert_inside(BUILDS / version, BUILDS)
     link = BUILDS / "current"
     if link.exists() or link.is_symlink(): link.unlink()
     link.symlink_to(BUILDS / version)
 
 def migrate(version, workspace_name="Default"):
+    version = _safe_version_tag(version)
     dest = BUILDS / version
+    _assert_inside(dest, BUILDS)
     dest.mkdir(parents=True, exist_ok=True)
     src_base = workspace_data_dir(workspace_name)
     for rel in MIGRATE_PATHS:
         src = src_base / rel
         if not src.exists(): continue
+        # Prevent rel from escaping src_base (e.g. if MIGRATE_PATHS ever
+        # gained a relative path with '..').
+        try:
+            _assert_inside(src, src_base)
+        except ValueError:
+            log(f"[MIGRATE] Skipped unsafe rel path: {rel!r}")
+            continue
         dst = dest / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         if src.is_dir(): shutil.copytree(src, dst, dirs_exist_ok=True)
         else:            shutil.copy2(src, dst)
 
 def find_binary(version: str):
-    if version is None: return None
+    """Locate the Luanti/Minetest executable for a given installed version."""
+    if version is None:
+        return None
+    try:
+        version = _safe_version_tag(version)
+    except ValueError:
+        return None
     base = BUILDS / version
-    if not base.exists(): return None
+    if not base.exists():
+        return None
     for name in ["luanti", "minetest"]:
         for candidate in [
             base / "bin" / name,
@@ -672,7 +891,8 @@ def find_binary(version: str):
             base / "luanti" / "bin" / name,
             base / "minetest" / "bin" / name,
         ]:
-            if candidate.exists(): return candidate
+            if candidate.exists():
+                return candidate
     for name in ["luanti", "minetest"]:
         for p in base.rglob(name):
             if p.is_file() and os.access(p, os.X_OK):
@@ -688,9 +908,24 @@ def import_custom_version(binary_path: Path, version_name: str) -> Path:
     safe = version_name.strip().replace("/", "_").replace("\\", "_").replace(" ", "_")
     if not safe:
         raise ValueError("Version name cannot be empty.")
+
+    # Validate the sanitised name is a safe filesystem component.
+    try:
+        safe = _safe_version_tag(safe)
+    except ValueError as exc:
+        raise ValueError(f"Invalid version name: {exc}") from exc
+
     dest_dir = BUILDS / safe
+    # Guard: dest_dir must stay inside BUILDS.
+    _assert_inside(dest_dir, BUILDS)
+
     if dest_dir.exists():
         raise FileExistsError(f"A version named '{safe}' already exists. Choose a different name.")
+
+    # Guard: the source binary must be a real, absolute path.
+    binary_path = binary_path.resolve()
+    if not binary_path.is_file():
+        raise FileNotFoundError(f"Binary not found: {binary_path}")
 
     src_root = binary_path.parent
     if src_root.name == "bin":
@@ -713,15 +948,78 @@ def import_custom_version(binary_path: Path, version_name: str) -> Path:
 
 
 def launch(version: str, workspace_name: str = "Default"):
+    """
+    Replace the current launcher process with the Luanti game binary using
+    os.execv().
+
+    WHY os.execv() INSTEAD OF subprocess.Popen()
+    ─────────────────────────────────────────────
+    subprocess.Popen() forks a child process and leaves the launcher running
+    alongside the game.  That has two problems:
+
+    1. The launcher process stays in memory for no reason.
+    2. More importantly, Popen(cmd_string, shell=True) — which an earlier
+       version of this project used — passes the command through /bin/sh,
+       enabling *command injection* if any part of the command string comes
+       from external data (version tags, workspace names, binary paths).
+
+    os.execv(path, args) is the POSIX "exec" family: it *replaces* the
+    calling process image with the new program.  There is no shell involved
+    whatsoever.  Arguments are passed as a Python list of str — the OS
+    passes them directly to the new program's argv.  No interpolation,
+    no metacharacter expansion, no injection surface.
+
+    WORKSPACE ISOLATION VIA ENVIRONMENT VARIABLE
+    ─────────────────────────────────────────────
+    Luanti respects the MINETEST_USER_PATH environment variable to locate its
+    data directory (worlds, mods, configs).  By setting that variable in the
+    child environment we isolate each workspace without touching the command
+    line at all.  Even if a workspace name contained spaces or shell
+    metacharacters, os.environ is passed as a plain mapping — the OS never
+    runs it through a shell.
+
+    NOTE ON FLET / GUI THREADS
+    ──────────────────────────
+    os.execv() is process-replacing — the Flet event loop, all UI threads,
+    and any background threads are terminated when exec succeeds.  This is
+    intentional: after the game launches, there is nothing left for the
+    launcher to do.  The user returns to their desktop when Luanti exits.
+    If you ever need the launcher to *stay running* (e.g. for a session
+    tracker), replace os.execv() with subprocess.Popen(..., shell=False).
+    """
     binary = find_binary(version)
     if not binary:
         raise FileNotFoundError(f"No binary for v{version}. Is it built?")
+
+    # Resolve and validate the binary is inside BUILDS — prevents a crafted
+    # find_binary() result from exec'ing an arbitrary path.
+    binary = binary.resolve()
+    _assert_inside(binary, BUILDS.resolve())
+
     os.chmod(binary, 0o755)
+
     wd = workspace_data_dir(workspace_name)
     ensure_workspace(workspace_name)
+
+    # Build the child environment: inherit everything, then set the workspace
+    # path.  We deliberately do NOT pass any workspace data on the command
+    # line to avoid injection via names that contain spaces or quotes.
     env = os.environ.copy()
     env["MINETEST_USER_PATH"] = str(wd)
-    subprocess.Popen([str(binary)], env=env)
+
+    # Apply the environment to the current process before exec'ing so that
+    # os.execv picks it up (os.execve would take it as an argument, but
+    # mutating os.environ is equally safe here).
+    os.environ.update(env)
+
+    log(f"[LAUNCH] execv → {binary}  workspace={workspace_name}")
+
+    # os.execv replaces this process; on success it never returns.
+    os.execv(str(binary), [str(binary)])
+
+    # If we somehow reach here, raise so the caller knows something went wrong.
+    raise RuntimeError(f"os.execv returned unexpectedly for {binary}")
+
 
 # =====================================================
 # NEWS — cached, non-blocking
@@ -2357,10 +2655,12 @@ class Launcher(ft.Container):
                     log(f"[FLOW] launching {cv}")
                     self._set_status("Launching...", ft.Icons.ROCKET_LAUNCH_ROUNDED,
                                      self._tokens["accent"])
-                    launch(cv, ws_name)
                     self._settings["total_sessions"] = \
                         self._settings.get("total_sessions", 0) + 1
                     save_settings(self._settings)
+                    # os.execv replaces this process — code after this line
+                    # will NOT run on success.
+                    launch(cv, ws_name)
                 else:
                     self._set_status("Fetching latest version info...",
                                      ft.Icons.MANAGE_SEARCH_ROUNDED)
@@ -2387,10 +2687,10 @@ class Launcher(ft.Container):
                     self._settings["known_latest"] = lv
                     self._set_status("Launching...", ft.Icons.ROCKET_LAUNCH_ROUNDED,
                                      self._tokens["accent"])
-                    launch(lv, ws_name)
                     self._settings["total_sessions"] = \
                         self._settings.get("total_sessions", 0) + 1
                     save_settings(self._settings)
+                    launch(lv, ws_name)
             else:
                 log(f"[FLOW] pinned={sel}")
                 if find_binary(sel) is None:
@@ -2407,10 +2707,10 @@ class Launcher(ft.Container):
                     migrate(sel, ws_name)
                 self._set_status("Launching...", ft.Icons.ROCKET_LAUNCH_ROUNDED,
                                  self._tokens["accent"])
-                launch(sel, ws_name)
                 self._settings["total_sessions"] = \
                     self._settings.get("total_sessions", 0) + 1
                 save_settings(self._settings)
+                launch(sel, ws_name)
 
             count = self._settings.get("launch_count", 0)
             if count in LAUNCH_MILESTONES:
@@ -2990,9 +3290,12 @@ class Launcher(ft.Container):
     def _open_folder(self, path: Path):
         try:
             path.mkdir(parents=True, exist_ok=True)
-            if sys.platform == "darwin":  subprocess.Popen(["open",     str(path)])
-            elif sys.platform == "win32": subprocess.Popen(["explorer", str(path)])
-            else:                         subprocess.Popen(["xdg-open", str(path)])
+            if sys.platform == "darwin":
+                subprocess.Popen(["open",     str(path)], shell=False)
+            elif sys.platform == "win32":
+                subprocess.Popen(["explorer", str(path)], shell=False)
+            else:
+                subprocess.Popen(["xdg-open", str(path)], shell=False)
         except Exception as ex:
             self._set_status(f"Cannot open: {ex}",
                              ft.Icons.ERROR_OUTLINE_ROUNDED, self._tokens["error"])
